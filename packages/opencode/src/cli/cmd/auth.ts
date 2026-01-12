@@ -13,27 +13,44 @@ import { Instance } from "../../project/instance"
 import type { Hooks } from "@opencode-ai/plugin"
 
 type PluginAuth = NonNullable<Hooks["auth"]>
+type PluginAuthMethod = PluginAuth["methods"][number]
+
+/**
+ * Collect all auth methods from all plugins targeting the given provider.
+ */
+async function collectPluginAuthMethods(provider: string): Promise<PluginAuthMethod[]> {
+  const plugins = await Plugin.list()
+  const methods: PluginAuthMethod[] = []
+  for (const plugin of plugins) {
+    if (plugin.auth?.provider === provider) {
+      methods.push(...plugin.auth.methods)
+    }
+  }
+  return methods
+}
 
 /**
  * Handle plugin-based authentication flow.
  * Returns true if auth was handled, false if it should fall through to default handling.
  */
-async function handlePluginAuth(plugin: { auth: PluginAuth }, provider: string): Promise<boolean> {
+async function handlePluginAuth(methods: PluginAuthMethod[], provider: string): Promise<boolean> {
+  if (methods.length === 0) return false
+
   let index = 0
-  if (plugin.auth.methods.length > 1) {
-    const method = await prompts.select({
+  if (methods.length > 1) {
+    const selection = await prompts.select({
       message: "Login method",
       options: [
-        ...plugin.auth.methods.map((x, index) => ({
+        ...methods.map((x, index) => ({
           label: x.label,
           value: index.toString(),
         })),
       ],
     })
-    if (prompts.isCancel(method)) throw new UI.CancelledError()
-    index = parseInt(method)
+    if (prompts.isCancel(selection)) throw new UI.CancelledError()
+    index = parseInt(selection)
   }
-  const method = plugin.auth.methods[index]
+  const method = methods[index]
 
   // Handle prompts for all auth types
   await Bun.sleep(10)
@@ -307,9 +324,10 @@ export const AuthLoginCommand = cmd({
 
         if (prompts.isCancel(provider)) throw new UI.CancelledError()
 
-        const plugin = await Plugin.list().then((x) => x.find((x) => x.auth?.provider === provider))
-        if (plugin && plugin.auth) {
-          const handled = await handlePluginAuth({ auth: plugin.auth }, provider)
+        // Collect all auth methods from all plugins targeting this provider
+        const pluginMethods = await collectPluginAuthMethods(provider)
+        if (pluginMethods.length > 0) {
+          const handled = await handlePluginAuth(pluginMethods, provider)
           if (handled) return
         }
 
@@ -322,10 +340,10 @@ export const AuthLoginCommand = cmd({
           provider = provider.replace(/^@ai-sdk\//, "")
           if (prompts.isCancel(provider)) throw new UI.CancelledError()
 
-          // Check if a plugin provides auth for this custom provider
-          const customPlugin = await Plugin.list().then((x) => x.find((x) => x.auth?.provider === provider))
-          if (customPlugin && customPlugin.auth) {
-            const handled = await handlePluginAuth({ auth: customPlugin.auth }, provider)
+          // Check if any plugins provide auth for this custom provider
+          const customPluginMethods = await collectPluginAuthMethods(provider)
+          if (customPluginMethods.length > 0) {
+            const handled = await handlePluginAuth(customPluginMethods, provider)
             if (handled) return
           }
 
