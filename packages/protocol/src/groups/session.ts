@@ -532,6 +532,22 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
         ),
     )
     .add(
+      HttpApiEndpoint.post("session.resume", "/api/session/:sessionID/resume", {
+        params: { sessionID: Session.ID },
+        success: HttpApiSchema.NoContent,
+        error: [SessionNotFoundError, ServiceUnavailableError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.resume",
+            summary: "Resume session",
+            description:
+              "Resume an interrupted session execution without adding input. Re-drives the agent loop from durable history; completed tools are replayed, never re-executed.",
+          }),
+        ),
+    )
+    .add(
       HttpApiEndpoint.post("session.revert.stage", "/api/session/:sessionID/revert/stage", {
         params: { sessionID: Session.ID },
         payload: Schema.Struct({ messageID: SessionMessage.ID, files: Schema.Boolean.pipe(Schema.optional) }),

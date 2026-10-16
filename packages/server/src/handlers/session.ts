@@ -460,6 +460,19 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         }),
       )
       .handle(
+        "session.resume",
+        Effect.fn(function* (ctx) {
+          yield* session.resume(ctx.params.sessionID).pipe(
+            Effect.mapError((error) =>
+              error._tag === "Session.NotFoundError"
+                ? missingSession(error)
+                : new ServiceUnavailableError({ message: `Resume failed: ${error._tag}`, service: "session resume" }),
+            ),
+          )
+          return HttpApiSchema.NoContent.make()
+        }),
+      )
+      .handle(
         "session.revert.stage",
         Effect.fn(function* (ctx) {
           yield* Effect.log("session.revert.stage", {
